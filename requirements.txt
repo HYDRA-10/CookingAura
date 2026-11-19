@@ -1,0 +1,32 @@
+#Servidor MCP para la comunicación entre agentes y herramientas
+mcp
+#Agentes y herramientas de LangChain
+langchain-mcp-adapters
+langchain
+#Base de datos vectorial para RAG
+pymilvus==3.0.2
+sentence-transformers 
+torch==2.14.0
+#Para la evaluación de recetas y generación de respuestas con Ollama
+langchain-ollama 
+#Para generar recetas con vLLM
+langchain_openai
+#Para la busqueda de recetas en la web
+google-genai
+#google-cloud-aiplatform>=1.70.0
+#langchain-google-vertexai
+#Frontend
+requests
+streamlit
+fastapi
+python-multipart
+uvicorn[standard]
+pydantic
+#Procesar documentos PDF, word, xlsx y csv
+PyMuPDF>=1.23
+python-docx
+openpyxl
+#Trasncripción de audio
+faster-whisper>=1.1.1
+#Generación grafo
+pygraphviz

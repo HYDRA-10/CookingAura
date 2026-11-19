@@ -1,0 +1,176 @@
+[
+  {
+    "id": "hola_que_como",
+    "texto": "¡Hola! ¿Qué puedo comer hoy?",
+    "intencion": "ideas",
+    "audio": "hola_que_como.wav"
+  },
+  {
+    "id": "cenas_rapidas",
+    "texto": "Dame ideas de cenas rápidas",
+    "intencion": "ideas",
+    "audio": "cenas_rapidas.wav"
+  },
+  {
+    "id": "que_desayuno",
+    "texto": "¿Qué puedo desayunar hoy?",
+    "intencion": "ideas",
+    "audio": "que_desayuno.wav"
+  },
+  {
+    "id": "que_ceno_noche",
+    "texto": "¿Qué ceno esta noche?",
+    "intencion": "ideas",
+    "audio": "que_ceno_noche.wav"
+  },
+  {
+    "id": "buenas_preparar_comida",
+    "texto": "Buenas tardes, ¿qué puedo preparar para comer?",
+    "intencion": "ideas",
+    "audio": "buenas_preparar_comida.wav"
+  },
+  {
+    "id": "tengo_hambre",
+    "texto": "Tengo hambre, ¿qué me recomiendas?",
+    "intencion": "ideas",
+    "audio": "tengo_hambre.wav"
+  },
+  {
+    "id": "que_meriendo",
+    "texto": "¿Qué puedo merendar?",
+    "intencion": "ideas",
+    "audio": "que_meriendo.wav"
+  },
+  {
+    "id": "comida_ligera",
+    "texto": "Dame ideas para una comida ligera",
+    "intencion": "ideas",
+    "audio": "comida_ligera.wav"
+  },
+  {
+    "id": "cena_huevos_patatas",
+    "texto": "¿Qué puedo cenar con huevos y patatas?",
+    "intencion": "ideas",
+    "audio": "cena_huevos_patatas.wav"
+  },
+  {
+    "id": "recomiendame_cena",
+    "texto": "Recomiéndame algo para cenar",
+    "intencion": "ideas",
+    "audio": "recomiendame_cena.wav"
+  },
+  {
+    "id": "desayunos_saludables",
+    "texto": "Dame ideas de desayunos saludables",
+    "intencion": "ideas",
+    "audio": "desayunos_saludables.wav"
+  },
+  {
+    "id": "que_hay_para_comer",
+    "texto": "¿Qué hay para comer hoy?",
+    "intencion": "ideas",
+    "audio": "que_hay_para_comer.wav"
+  },
+  {
+    "id": "sugiereme_plato",
+    "texto": "Sugiéreme algún plato para la comida",
+    "intencion": "ideas",
+    "audio": "sugiereme_plato.wav"
+  },
+  {
+    "id": "cocinar_despensa",
+    "texto": "¿Qué puedo cocinar con lo que tengo en la despensa?",
+    "intencion": "ideas",
+    "audio": "cocinar_despensa.wav"
+  },
+  {
+    "id": "hola_ideas_cena",
+    "texto": "Hola, dame ideas para la cena",
+    "intencion": "ideas",
+    "audio": "hola_ideas_cena.wav"
+  },
+  {
+    "id": "me_apetece_cenar",
+    "texto": "Me apetece algo para cenar, ¿qué hago?",
+    "intencion": "ideas",
+    "audio": "me_apetece_cenar.wav"
+  },
+  {
+    "id": "que_como_hoy",
+    "texto": "¿Qué como hoy?",
+    "intencion": "ideas",
+    "audio": "que_como_hoy.wav"
+  },
+  {
+    "id": "ideas_pollo",
+    "texto": "Dame ideas de platos con pollo",
+    "intencion": "ideas",
+    "audio": "ideas_pollo.wav"
+  },
+  {
+    "id": "desayuno_rapido",
+    "texto": "¿Qué puedo desayunar rápido antes de trabajar?",
+    "intencion": "ideas",
+    "audio": "desayuno_rapido.wav"
+  },
+  {
+    "id": "que_almuerzo",
+    "texto": "¿Qué puedo almorzar hoy?",
+    "intencion": "ideas",
+    "audio": "que_almuerzo.wav"
+  },
+  {
+    "id": "asis_quedan_huevos",
+    "texto": "¿Me quedan huevos en la despensa?",
+    "intencion": "asistente",
+    "audio": "asis_quedan_huevos.wav"
+  },
+  {
+    "id": "asis_lista_compra",
+    "texto": "¿Qué tengo en la lista de la compra?",
+    "intencion": "asistente",
+    "audio": "asis_lista_compra.wav"
+  },
+  {
+    "id": "asis_pochar_cebolla",
+    "texto": "¿Cómo se pocha una cebolla?",
+    "intencion": "asistente",
+    "audio": "asis_pochar_cebolla.wav"
+  },
+  {
+    "id": "asis_mis_alergias",
+    "texto": "¿Qué alergias tengo guardadas?",
+    "intencion": "asistente",
+    "audio": "asis_mis_alergias.wav"
+  },
+  {
+    "id": "asis_que_cene_ayer",
+    "texto": "¿Qué cené ayer?",
+    "intencion": "asistente",
+    "audio": "asis_que_cene_ayer.wav"
+  },
+  {
+    "id": "asis_receta_guardada",
+    "texto": "¿Tengo alguna receta de lentejas guardada?",
+    "intencion": "asistente",
+    "audio": "asis_receta_guardada.wav"
+  },
+  {
+    "id": "asis_calorias_aguacate",
+    "texto": "¿Cuántas calorías tiene un aguacate?",
+    "intencion": "asistente",
+    "audio": "asis_calorias_aguacate.wav"
+  },
+  {
+    "id": "dir_buenos_dias",
+    "texto": "Buenos días",
+    "intencion": "directa",
+    "audio": "dir_buenos_dias.wav"
+  },
+  {
+    "id": "dir_tiempo_manana",
+    "texto": "¿Qué tiempo hará mañana?",
+    "intencion": "directa",
+    "audio": "dir_tiempo_manana.wav"
+  }
+]

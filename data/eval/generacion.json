@@ -1,0 +1,391 @@
+[
+  {
+    "id": "ideas_cena_ingredientes",
+    "tipo": "ideas",
+    "mensaje": "¿Qué ceno?",
+    "tipo_comida": "cena",
+    "ingredientes": "huevos, patatas, espinacas, queso",
+    "receta": true,
+    "mas_ideas": true
+  },
+  {
+    "id": "ideas_desayuno_despensa",
+    "tipo": "ideas",
+    "mensaje": "¿Qué puedo desayunar hoy?",
+    "tipo_comida": "desayuno",
+    "preparacion": {
+      "despensa": [
+        [
+          "leche",
+          1,
+          "l"
+        ],
+        [
+          "pan de molde",
+          1,
+          "paquete"
+        ],
+        [
+          "plátanos",
+          4,
+          "unidades"
+        ],
+        [
+          "yogur natural",
+          4,
+          "unidades"
+        ],
+        [
+          "huevos",
+          6,
+          "unidades"
+        ],
+        [
+          "copos de avena",
+          500,
+          "g"
+        ]
+      ]
+    },
+    "receta": true
+  },
+  {
+    "id": "ideas_comida_alergia",
+    "tipo": "ideas",
+    "mensaje": "Dame ideas para comer",
+    "tipo_comida": "comida",
+    "ingredientes": "arroz, gambas, pollo, pimiento, tomate",
+    "evitar": [
+      "gambas"
+    ],
+    "receta": true,
+    "mas_ideas": true
+  },
+  {
+    "id": "ideas_merienda",
+    "tipo": "ideas",
+    "mensaje": "¿Qué meriendo?",
+    "tipo_comida": "merienda",
+    "ingredientes": "yogur, plátano, avena, miel",
+    "receta": true
+  },
+  {
+    "id": "ideas_cena_vegetariana",
+    "tipo": "ideas",
+    "mensaje": "Dame ideas de cenas",
+    "tipo_comida": "cena",
+    "ingredientes": "calabacín, huevos, champiñones, queso, pollo",
+    "preparacion": {
+      "preferencias": [
+        [
+          "dieta",
+          "vegetariana"
+        ]
+      ]
+    },
+    "evitar": [
+      "pollo"
+    ],
+    "receta": true
+  },
+  {
+    "id": "plato_gazpacho",
+    "tipo": "plato",
+    "mensaje": "Dame la receta del gazpacho",
+    "plato": "Gazpacho"
+  },
+  {
+    "id": "plato_tortilla",
+    "tipo": "plato",
+    "mensaje": "¿Cómo se hace una tortilla de patatas?",
+    "plato": "Tortilla de patatas"
+  },
+  {
+    "id": "plato_con_alergia",
+    "tipo": "plato",
+    "mensaje": "Dame la receta de una paella de marisco",
+    "plato": "Paella",
+    "evitar": [
+      "marisco",
+      "gambas",
+      "mejillones",
+      "calamar"
+    ]
+  },
+  {
+    "id": "agente_consulta_huevos",
+    "tipo": "agente",
+    "mensaje": "¿Me quedan huevos?",
+    "preparacion": {
+      "despensa": [
+        [
+          "huevos",
+          6,
+          "unidades"
+        ]
+      ]
+    },
+    "herramientas_todas": [
+      "ver_despensa"
+    ],
+    "herramientas_prohibidas": [
+      "modificadoras"
+    ],
+    "respuesta_contiene": [
+      "6|seis"
+    ],
+    "efectos": [
+      {
+        "sin_cambios": true
+      }
+    ]
+  },
+  {
+    "id": "agente_consulta_leche",
+    "tipo": "agente",
+    "mensaje": "¿Tengo leche en la nevera?",
+    "preparacion": {
+      "despensa": [
+        [
+          "leche",
+          2,
+          "l"
+        ]
+      ]
+    },
+    "herramientas_todas": [
+      "ver_despensa"
+    ],
+    "herramientas_prohibidas": [
+      "modificadoras"
+    ],
+    "respuesta_contiene": [
+      "leche"
+    ],
+    "efectos": [
+      {
+        "sin_cambios": true
+      }
+    ]
+  },
+  {
+    "id": "agente_compra_patatas",
+    "tipo": "agente",
+    "mensaje": "He comprado 2 kg de patatas, añádelas a la despensa",
+    "preparacion": {
+      "despensa": [
+        [
+          "patatas",
+          1,
+          "kg"
+        ]
+      ]
+    },
+    "herramientas_todas": [
+      "anadir_ingrediente"
+    ],
+    "respuesta_contiene": [
+      "patatas"
+    ],
+    "efectos": [
+      {
+        "despensa_aumenta": {
+          "nombre": "patatas",
+          "en": 2
+        }
+      }
+    ]
+  },
+  {
+    "id": "agente_cero_aceitunas",
+    "tipo": "agente",
+    "mensaje": "Me quedan cero gramos de aceitunas",
+    "preparacion": {
+      "despensa": [
+        [
+          "aceitunas",
+          200,
+          "g"
+        ]
+      ]
+    },
+    "herramientas_alguna": [
+      "actualizar_ingrediente",
+      "consumir_ingredientes",
+      "eliminar_ingrediente"
+    ],
+    "efectos": [
+      {
+        "despensa_agotado": "aceitunas"
+      }
+    ]
+  },
+  {
+    "id": "agente_descontar_tortilla",
+    "tipo": "agente",
+    "mensaje": "He hecho una tortilla con 3 huevos y 500 g de patatas, descuéntalos de la despensa",
+    "preparacion": {
+      "despensa": [
+        [
+          "huevos",
+          6,
+          "unidades"
+        ],
+        [
+          "patatas",
+          1,
+          "kg"
+        ]
+      ]
+    },
+    "herramientas_alguna": [
+      "consumir_ingredientes",
+      "actualizar_ingrediente"
+    ],
+    "efectos": [
+      {
+        "despensa_cantidad": {
+          "nombre": "huevos",
+          "valor": 3
+        }
+      },
+      {
+        "despensa_cantidad": {
+          "nombre": "patatas",
+          "valor": 0.5
+        }
+      }
+    ]
+  },
+  {
+    "id": "agente_lista_anadir",
+    "tipo": "agente",
+    "mensaje": "Añade leche y tomates a la lista de la compra",
+    "preparacion": {
+      "vaciar_lista": true
+    },
+    "herramientas_todas": [
+      "anadir_a_lista_compra"
+    ],
+    "efectos": [
+      {
+        "lista_contiene": "leche"
+      },
+      {
+        "lista_contiene": "tomate"
+      }
+    ]
+  },
+  {
+    "id": "agente_lista_consultar",
+    "tipo": "agente",
+    "mensaje": "¿Qué tengo en la lista de la compra?",
+    "preparacion": {
+      "vaciar_lista": true,
+      "lista_compra": [
+        "arroz",
+        "yogures"
+      ]
+    },
+    "herramientas_todas": [
+      "ver_lista_compra"
+    ],
+    "herramientas_prohibidas": [
+      "modificadoras"
+    ],
+    "respuesta_contiene": [
+      "arroz",
+      "yogur"
+    ],
+    "efectos": [
+      {
+        "sin_cambios": true
+      }
+    ]
+  },
+  {
+    "id": "agente_guardar_alergia",
+    "tipo": "agente",
+    "mensaje": "Soy alérgico al marisco",
+    "herramientas_todas": [
+      "guardar_preferencia"
+    ],
+    "efectos": [
+      {
+        "preferencia": {
+          "tipo": "alergia",
+          "valor": "marisco"
+        }
+      }
+    ]
+  },
+  {
+    "id": "agente_historial",
+    "tipo": "agente",
+    "mensaje": "Hoy he cenado una tortilla de patatas, apúntalo en mi historial",
+    "herramientas_todas": [
+      "registrar_plato_cocinado"
+    ],
+    "efectos": [
+      {
+        "historial_contiene": "tortilla"
+      }
+    ]
+  },
+  {
+    "id": "agente_continuacion",
+    "tipo": "agente",
+    "mensaje": "Sí, hazlo",
+    "historial": [
+      {
+        "role": "user",
+        "content": "Se me han acabado los tomates"
+      },
+      {
+        "role": "assistant",
+        "content": "Vaya. ¿Quieres que añada los tomates a tu lista de la compra?"
+      }
+    ],
+    "preparacion": {
+      "vaciar_lista": true
+    },
+    "herramientas_todas": [
+      "anadir_a_lista_compra"
+    ],
+    "efectos": [
+      {
+        "lista_contiene": "tomate"
+      }
+    ]
+  },
+  {
+    "id": "agente_duda_cocina",
+    "tipo": "agente",
+    "mensaje": "¿Cómo se pocha una cebolla?",
+    "herramientas_prohibidas": [
+      "modificadoras"
+    ],
+    "respuesta_contiene": [
+      "cebolla"
+    ],
+    "efectos": [
+      {
+        "sin_cambios": true
+      }
+    ]
+  },
+  {
+    "id": "agente_fuera_de_tema",
+    "tipo": "agente",
+    "mensaje": "¿Qué tiempo hará mañana?",
+    "ruta": "directa",
+    "herramientas_prohibidas": [
+      "modificadoras"
+    ],
+    "efectos": [
+      {
+        "sin_cambios": true
+      }
+    ]
+  }
+]

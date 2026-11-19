@@ -1,0 +1,38 @@
+# ==========================================================
+#  CookingAura · lo que NO se sube a GitHub
+# ==========================================================
+
+# --- Secretos (nunca deben subirse) ---
+.env
+config/*.json
+*.pem
+*.key
+
+# --- Datos personales ---
+data/*.db
+data/*.db.*
+data/documentos/
+data/grafo/
+
+# Resultados de evaluación (se regeneran). Los casos de prueba SÍ se suben.
+data/eval/*.csv
+data/eval/*_detalle.jsonl
+data/eval/voz/*.wav
+
+# --- Volúmenes de Docker (Milvus, etcd, MinIO: pueden ocupar GB) ---
+docker/volumes/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.pytest_cache/
+
+# --- Sistema operativo y editores ---
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
