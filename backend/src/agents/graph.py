@@ -13,7 +13,8 @@ import httpx
 from langgraph.graph import StateGraph, END
 
 # Importaciones módulos app
-from .rag_node import (buscar_recetas, buscar_recetas_en_milvus, limpiar_ingredientes, obtener_receta_por_id,
+from .rag_node import (buscar_recetas, buscar_recetas_en_milvus, buscar_con_criterios,
+                       limpiar_ingredientes, obtener_receta_por_id,
                        get_client, COLLECTION_NAME)
 from .web_search_node import buscar_receta_internet
 from .ideas_node import generar_ideas_creativas, titulo_y_resumen
@@ -22,11 +23,12 @@ from .mcp_client import herramientas_mcp, gestor_mcp, texto_resultado_mcp as _te
 from .agente_chat_generico import agente_eventos, ejecutar_agente, hay_tema
 from .intencion import intencion_por_reglas, quitar_saludo, habla_de_cocina, plato_pedido
 from src.data import sqlitebd, seleccion_ingredientes
+from src.rag import metadatos
 from src.llms.ollama_client import evaluar_intencion, evaluar_ingredientes, generar_respuesta_final_ollama, stream_respuesta_ollama
 from src.llms.vllm_client import generar_respuesta_final_vllm, stream_respuesta_vllm, VLLM_URL
 from src.llms.prompts import normalizar_tipo_comida, detectar_tipo_comida, construir_prompt_generador, tipo_comida_con_articulo
 from src.config import (IDEAS_TOTAL, IDEAS_MAX_LOCALES, EVAL_MIN_COINCIDENCIAS, GENERADOR_MAX_CHARS,
-                        DESPENSA_MAX_INGREDIENTES)
+                        DESPENSA_MAX_INGREDIENTES, WEB_RECETA_DIRECTA, GEMINI_TIMEOUT)
 
 
 def cronometrar(fn):
@@ -266,20 +268,25 @@ def nodo_ideas_locales(state: AgentState):
 
     ingredientes = limpiar_ingredientes(state.get("ingredientes_mcp") or "")
     candidatos = max_ideas * 3
+    preferencias = _preferencias(state)
+    evitar = (preferencias.get("alergia") or []) + (preferencias.get("no_me_gusta") or [])
+    # Filtros por metadatos: tipo de comida, alergias (alérgenos oficiales) y dieta
+    dieta = next((d for d in metadatos.dietas(" ".join(preferencias.get("dieta") or []))
+                  if d in metadatos.DIETAS_COMPATIBLES), None)
+    filtros = {"tipo_comida": state.get("tipo_comida"), "alergias": preferencias.get("alergia") or [],
+               "dieta": dieta}
     if state.get("improvisar") or not ingredientes:
         # Sin ingredientes: recetas propias que encajen con el momento del día
         momento = tipo_comida_con_articulo(state.get("tipo_comida"))
         consulta = f"Receta para {momento}" if momento else "Receta sencilla"
-        resultados = buscar_recetas(consulta, state.get("tipo_comida") or "receta",
-                                    top_k=candidatos, excluir_ids=state.get("ids_excluidos"))
+        resultados = buscar_con_criterios(consulta, state.get("tipo_comida") or "receta", top_k=candidatos,
+                                          excluir_ids=state.get("ids_excluidos"), **filtros)
         minimo = 0
     else:
-        resultados = buscar_recetas_en_milvus(ingredientes, state.get("tipo_comida"),
-                                              top_k=candidatos, excluir_ids=state.get("ids_excluidos"))
+        resultados = buscar_recetas_en_milvus(ingredientes, state.get("tipo_comida"), top_k=candidatos,
+                                              excluir_ids=state.get("ids_excluidos"),
+                                              alergias=filtros["alergias"], dieta=dieta)
         minimo = max(1, min(EVAL_MIN_COINCIDENCIAS, len(separar_ingredientes(ingredientes))))
-
-    preferencias = _preferencias(state)
-    evitar = (preferencias.get("alergia") or []) + (preferencias.get("no_me_gusta") or [])
     ideas, vistos = [], {n.strip().lower() for n in (state.get("recetas_descartadas") or [])}
     for r in resultados:
         if r.get("coincidencias", 0) < minimo:
@@ -395,19 +402,29 @@ def nodo_preparar_receta(state: AgentState):
 
 
 def nodo_busqueda_web(state: AgentState):
-    """Busca en internet la receta del plato elegido. Si falla, el generador la redacta desde la idea."""
+    """Busca en internet la receta del plato elegido.
+    - Con WEB_RECETA_DIRECTA, la receta de Gemini llega ya redactada y se muestra tal cual (sin pasar por el
+      generador local, que tardaría ~100 s más en CPU).
+    - Si Gemini falla o tarda más de GEMINI_TIMEOUT segundos, el generador redacta la receta desde la idea."""
     idea = state.get("idea_elegida") or {}
-    print(f"-> Ejecutando Nodo Búsqueda Web: receta de «{idea.get('nombre')}»")
+    print(f"-> Ejecutando Nodo Búsqueda Web: receta de «{idea.get('nombre')}» (límite {GEMINI_TIMEOUT} s)")
     try:
         receta_red = buscar_receta_internet(
             limpiar_ingredientes(state.get("ingredientes_mcp") or ""),
             state.get("tipo_comida"),
             plato=idea.get("nombre"),
             restricciones=sqlitebd.texto_restricciones(_preferencias(state)),
+            formato_final=WEB_RECETA_DIRECTA,
         )
+        if WEB_RECETA_DIRECTA and receta_red and not receta_red.startswith("No se pudo"):
+            print("   Receta de Gemini mostrada directamente (sin reescribirla con el modelo local)")
+            # receta_generada marca la respuesta como receta para el frontend (✅ en la idea, origen "web")
+            return {"recetas_encontradas": receta_red, "origen_receta": "web", "respuesta_final": receta_red,
+                    "receta_generada": True}
         return {"recetas_encontradas": receta_red, "origen_receta": "web"}
     except Exception as e:
-        print(f"⚠️  Búsqueda web no disponible: {e}", flush=True)
+        print(f"⚠️  Búsqueda web no disponible ({type(e).__name__}: {e}); "
+              "la receta se redacta a partir de la idea.", flush=True)
         referencia = f"Plato: {idea.get('nombre', '')}. {idea.get('descripcion', '')}".strip()
         return {"recetas_encontradas": referencia, "origen_receta": "idea"}
 

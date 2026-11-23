@@ -30,6 +30,7 @@ COLUMNAS_CONTENIDO = {"ingredientes", "pasos", "preparacion", "elaboracion", "in
 class Extraccion:
     texto: str = ""                                           # se trocea normalmente
     recetas: list[str] = field(default_factory=list)          # una receta completa por elemento
+    metadatos: list[dict] = field(default_factory=list)       # metadatos de cada receta (mismo orden)
     avisos: list[str] = field(default_factory=list)           # problemas no fatales (p. ej. páginas sin OCR)
 
     @property
@@ -527,8 +528,9 @@ def _hojas_csv(contenido: bytes) -> dict[str, list[list]]:
     return {"CSV": list(csv.reader(io.StringIO(texto), dialecto))}
 
 
-def _recetario(filas: list[list]) -> list[str] | None:
-    """Si la tabla es un recetario (columna de nombre + ingredientes/pasos), una receta por fila."""
+def _recetario(filas: list[list]) -> tuple[list[str], list[dict]] | None:
+    """Si la tabla es un recetario (columna de nombre + ingredientes/pasos), una receta por fila,
+    con los metadatos leídos de sus columnas (tipo de comida, tiempo, alérgenos...)."""
     if len(filas) < 2:
         return None
     cabecera = [c or "" for c in filas[0]]
@@ -537,7 +539,9 @@ def _recetario(filas: list[list]) -> list[str] | None:
     if col_nombre is None or not any(c in COLUMNAS_CONTENIDO for c in normalizadas):
         return None
 
-    recetas = []
+    from src.rag import metadatos
+
+    recetas, metas = [], []
     for fila in _rellenar_combinadas(filas[1:]):
         nombre = fila[col_nombre].strip() if col_nombre < len(fila) else ""
         if not nombre:
@@ -547,7 +551,8 @@ def _recetario(filas: list[list]) -> list[str] | None:
             if i != col_nombre and str(valor).strip():
                 lineas.append(f"{titulo or 'Detalle'}: {str(valor).strip()}")
         recetas.append("\n".join(lineas))
-    return recetas
+        metas.append(metadatos.desde_fila(cabecera, fila))
+    return recetas, metas
 
 
 def _celdas_hoja(filas: list[list]) -> list[list]:
@@ -572,9 +577,11 @@ def _extraer_hojas(hojas: dict[str, list[list]]) -> Extraccion:
         celdas = _celdas_hoja(filas)
         if not celdas:
             continue
-        recetas = _recetario(celdas)
-        if recetas:
+        recetario = _recetario(celdas)
+        if recetario:
+            recetas, metas = recetario
             resultado.recetas.extend(recetas)
+            resultado.metadatos.extend(metas)
         else:
             texto = tabla_a_texto(celdas)
             if texto:

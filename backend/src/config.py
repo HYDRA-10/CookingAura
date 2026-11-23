@@ -67,6 +67,12 @@ AGENTE_HISTORIAL = _entero("AGENTE_HISTORIAL", 8, minimo=0)
 # Segundos máximos que se espera a cada respuesta del modelo del agente
 AGENTE_TIMEOUT = _entero("AGENTE_TIMEOUT", 180, minimo=30)
 
+# --- Gemini (Vertex AI) ---
+# Segundos máximos de espera a Gemini (búsqueda web e ideas); pasado ese tiempo se sigue sin él
+GEMINI_TIMEOUT = _entero("GEMINI_TIMEOUT", 25, minimo=5)
+# La receta que encuentra Gemini se muestra tal cual (si), o la vuelve a redactar el modelo local (no)
+WEB_RECETA_DIRECTA = _opcion("WEB_RECETA_DIRECTA", "si", {"si", "no"}) == "si"
+
 # --- Arranque ---
 # Cargar los modelos de Ollama al arrancar el backend (la primera petición no paga la carga)
 PRECALENTAR_MODELOS = _opcion("PRECALENTAR_MODELOS", "si", {"si", "no"}) == "si"

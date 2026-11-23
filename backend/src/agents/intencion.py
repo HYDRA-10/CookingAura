@@ -42,9 +42,11 @@ _ASISTENTE = re.compile(
     r"|\bse\s+me\s+ha\w*\s+(acabado|terminado|agotado)\b"
     # Preferencias: "soy alérgico al marisco", "no me gusta el cilantro", "soy vegetariano"
     r"|\bsoy\s+(alergic\w*|intolerante|celiac\w*|vegan\w*|vegetarian\w*)\b"
-    r"|\b(alergia|alergico|alergica|intolerancia)\b|\bno\s+me\s+gusta\w*\b|\bodio\b"
+    r"|\b(alergi\w*|alergic\w*|intoleran\w*)\b|\bno\s+me\s+gusta\w*\b|\bodio\b"
     # Historial y recetas guardadas
     r"|\b(historial|mis\s+recetas|recetas\s+guardadas|recetario)\b"
+    # "¿Tengo alguna receta de lentejas guardada?"
+    r"|\breceta\w*\b.*\bguardad\w*|\bguardad\w*\b.*\breceta\w*"
 )
 
 # Palabras de cocina: si aparecen, un "OTRO" del clasificador se corrige a ASISTENTE

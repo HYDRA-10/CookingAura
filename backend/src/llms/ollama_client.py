@@ -115,13 +115,42 @@ def generar_respuesta_final_ollama(ingredientes: str, receta_elegida: str,
     return respuesta.content
 
 
+REINTENTOS_STREAM = 3
+
+
 async def stream_respuesta_ollama(prompt: str):
-    """Genera la respuesta token a token (para el endpoint /chat/stream)."""
-    llm = get_ollama(False)
+    """Genera la respuesta token a token (para el endpoint /chat/stream).
+
+    Si la conexión con Ollama se corta o llega dañada a mitad del streaming (p. ej. "illegal chunk header",
+    que puede ocurrir al pasar por la red de Docker hasta el Ollama del equipo), se reintenta con una conexión
+    nueva: si aún no había texto, se empieza de cero; si ya lo había, se pide al modelo que continúe donde lo
+    dejó, para que el usuario no vea nada repetido. Los tiempos de espera agotados no se reintentan."""
+    import asyncio
+    import httpx
+    from langchain_core.messages import AIMessage, HumanMessage
+
     print("Generando respuesta en streaming con Ollama...")
-    async for trozo in llm.astream(prompt):
-        if trozo.content:
-            yield trozo.content
+    generado = ""
+    for intento in range(1, REINTENTOS_STREAM + 1):
+        llm = get_ollama(False)                     # cliente nuevo: nunca se reutiliza una conexión dañada
+        if generado:
+            entrada = [HumanMessage(prompt), AIMessage(generado),
+                       HumanMessage("Continúa exactamente donde lo has dejado, sin repetir nada de lo anterior "
+                                    "y sin introducción.")]
+        else:
+            entrada = prompt
+        try:
+            async for trozo in llm.astream(entrada):
+                if trozo.content:
+                    generado += trozo.content
+                    yield trozo.content
+            return
+        except httpx.TransportError as e:
+            if isinstance(e, httpx.TimeoutException) or intento == REINTENTOS_STREAM:
+                raise
+            print(f"⚠️  Conexión con Ollama interrumpida ({type(e).__name__}) tras {len(generado)} caracteres; "
+                  f"reintento {intento}/{REINTENTOS_STREAM - 1}", flush=True)
+            await asyncio.sleep(1)
 
 
 def generar_json_ollama(prompt: str, num_predict: int = 350) -> str:
