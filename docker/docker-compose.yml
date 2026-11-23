@@ -102,7 +102,20 @@ services:
     restart: unless-stopped
     networks:
       - red-asistente
-
+  #Interfaz gráfica de Milvus (sin usuario ni contraseña)
+  attu:
+    container_name: milvus-attu
+    image: zilliz/attu:latest
+    profiles: ["attu"]
+    environment:
+      MILVUS_URL: standalone:19530
+    ports:
+      - "3001:3000"
+    depends_on:
+      standalone:
+        condition: service_healthy
+    networks:
+      - red-asistente
   # 2. Servidor de inferencia pesado (Generador local, solo con GPU NVIDIA)
   vllm-server:
     container_name: vllm-server
@@ -138,6 +151,7 @@ services:
   ollama-server:
     container_name: ollama-server
     image: ollama/ollama:latest
+    profiles: ["ollama-docker"]
     ports:
       - "11434:11434"
     env_file:
@@ -170,9 +184,12 @@ services:
       - ~/.cache/huggingface:/root/.cache/huggingface
     depends_on:
       standalone:
-        condition: service_healthy   # espera a que Milvus responda en /healthz
+        condition: service_healthy
       ollama-server:
         condition: service_started
+        required: false
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - red-asistente
     command: uvicorn src.main:app --host 0.0.0.0 --port 8080 --reload
