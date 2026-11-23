@@ -15,7 +15,7 @@ import os
 import sqlite3
 import io
 from pymilvus import MilvusClient
-from src.agents.rag_node import buscar_recetas, MODOS, RANKERS, COLLECTION_NAME, MILVUS_URI
+from src.agents.rag_node import buscar_recetas, MODOS, RANKERS, COLLECTION_NAME, MILVUS_URI, buscar_con_criterios
 from src.rag.indexer import indexar_documento, listar_documentos, borrar_documento
 from src.rag.cronometro import Cronometro
 from src.rag import almacen
@@ -342,11 +342,16 @@ def verificar_estado_milvus():
 #Endpoint para buscar recetas en Milvus: híbrida (por defecto), semántica o léxica (BM25)
 @app.get("/recetas/buscar")
 def buscar_recetas_endpoint(query: str, modo: str = "hibrida", top_k: int = 5,
-                            ranker: str = "rrf", peso_denso: float = 0.7):
+                            ranker: str = "rrf", peso_denso: float = 0.7,
+                            tipo_comida: Optional[str] = None, dieta: Optional[str] = None,
+                            tiempo_max: Optional[int] = None, fuente: Optional[str] = None):
     """
     - modo: hibrida | semantica | lexica
     - ranker (solo híbrida): rrf | ponderado
     - peso_denso (solo ponderado): 0 = solo BM25, 1 = solo semántica
+    - Filtros por metadatos (opcionales): tipo_comida (desayuno, comida, cena...), dieta (vegana,
+      vegetariana...), tiempo_max (minutos) y fuente (nombre del documento). Primero salen las recetas
+      que los cumplen y después las que no tienen ese dato ("cumple": false); nunca las que los incumplen.
     """
     if modo not in MODOS:
         raise HTTPException(status_code=400, detail=f"Modo no válido. Usa uno de: {', '.join(sorted(MODOS))}")
@@ -356,8 +361,9 @@ def buscar_recetas_endpoint(query: str, modo: str = "hibrida", top_k: int = 5,
         return {"resultados": []}
 
     try:
-        resultados = buscar_recetas(
-            query, modo=modo, top_k=max(1, min(top_k, 20)), ranker=ranker, peso_denso=peso_denso
+        resultados = buscar_con_criterios(
+            query, top_k=max(1, min(top_k, 20)), tipo_comida=tipo_comida, dieta=dieta,
+            tiempo_max=tiempo_max, fuente=fuente, modo=modo, ranker=ranker, peso_denso=peso_denso
         )
         return {"resultados": resultados}
     except Exception as e:
@@ -415,7 +421,8 @@ def subir_e_indexar_receta(archivo: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail=motivo)
 
     try:
-        fragmentos = indexar_documento(extraccion.texto, nombre, recetas=extraccion.recetas, crono=crono)
+        fragmentos = indexar_documento(extraccion.texto, nombre, recetas=extraccion.recetas, crono=crono,
+                                         metadatos_recetas=extraccion.metadatos)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

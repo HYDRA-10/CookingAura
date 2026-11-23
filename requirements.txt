@@ -1,32 +1,50 @@
-#Servidor MCP para la comunicación entre agentes y herramientas
-mcp
-#Agentes y herramientas de LangChain
-langchain-mcp-adapters
-langchain
-#Base de datos vectorial para RAG
+# =====================================================================
+#  CookingAura · dependencias directas con versión fijada
+#  (versiones tomadas de un entorno que funciona: pip freeze del backend)
+#
+#  PyTorch se instala ANTES desde el índice de solo CPU (ver docker/Dockerfile);
+#  la línea torch==... de abajo ya queda satisfecha y no descarga la versión con CUDA.
+# =====================================================================
+
+# --- Orquestación: grafo y agentes ---
+langgraph==1.2.24
+langchain==1.5.2
+langchain-core==1.8.4
+
+# --- Herramientas MCP (mcp y el adaptador deben ser versiones compatibles entre sí) ---
+mcp==1.30.0
+langchain-mcp-adapters==0.3.2
+
+# --- Modelos de lenguaje ---
+# Ollama (clasificación, ideas, recetas, agente)
+langchain-ollama==1.1.0
+# vLLM (API compatible con OpenAI; solo con GPU)
+langchain-openai==1.8.5
+# Gemini en Vertex AI (búsqueda web e ideas)
+google-genai==3.6.1
+
+# --- RAG: base vectorial y embeddings ---
 pymilvus==3.0.2
-sentence-transformers 
+sentence-transformers==6.3.0
 torch==2.14.0
-#Para la evaluación de recetas y generación de respuestas con Ollama
-langchain-ollama 
-#Para generar recetas con vLLM
-langchain_openai
-#Para la busqueda de recetas en la web
-google-genai
-#google-cloud-aiplatform>=1.70.0
-#langchain-google-vertexai
-#Frontend
-requests
-streamlit
-fastapi
-python-multipart
-uvicorn[standard]
-pydantic
-#Procesar documentos PDF, word, xlsx y csv
-PyMuPDF>=1.23
-python-docx
-openpyxl
-#Trasncripción de audio
-faster-whisper>=1.1.1
-#Generación grafo
-pygraphviz
+numpy==2.5.5
+
+# --- API (backend) ---
+fastapi==0.165.0
+uvicorn[standard]==0.54.0
+python-multipart==0.0.34
+pydantic==2.14.4
+python-dotenv==1.2.4
+httpx==0.28.1
+
+# --- Interfaz (frontend) ---
+streamlit==1.67.0
+requests==2.34.2
+
+# --- Documentos: PDF, Word, Excel, CSV ---
+PyMuPDF==2.1
+python-docx==1.2.0
+openpyxl==3.1.5
+
+# --- Voz ---
+faster-whisper==1.2.1

@@ -85,11 +85,12 @@ flowchart LR
 |---|---|
 | `cookingaura-app-frontend` | Interfaz web en Streamlit |
 | `cookingaura-app-backend` | API FastAPI, grafo LangGraph, agente, RAG, embeddings (bge-m3) y transcripción (Whisper) |
-| `ollama-server` | LLM local: clasificación de intención, validación de ingredientes, ideas, agente y recetas |
+| `ollama-server` | LLM local: clasificación de intención, validación de ingredientes, ideas, agente y recetas. **Opcional** (perfil `ollama-docker`): Ollama también puede ir instalado en el equipo, fuera de Docker (sección 5.5) |
 | `vllm-server` | Generador alternativo más rápido. Solo con GPU NVIDIA y el perfil `vllm-activo` |
 | `milvus-standalone` | Base de datos vectorial: colección de recetas, índices y búsquedas |
 | `milvus-etcd` | Metadatos de Milvus (esquemas, segmentos) |
 | `milvus-minio` | Almacén de objetos de Milvus (fragmentos, vectores, índices) |
+| `milvus-attu` | Attu, interfaz web para explorar Milvus (colecciones, esquema, índices, datos y búsquedas). **Opcional** (perfil `attu`): `python run.py --attu`, en `http://localhost:3001` |
 | `milvus-volume-init` | Prepara los permisos del volumen de Milvus antes de arrancarlo |
 
 El **servidor MCP** no es un contenedor: el backend lo lanza como subproceso (`src/agents/mcp_tool.py`) **una sola vez al arrancar** y se comunica con él por stdio. Todas las peticiones (el nodo `mcp` del grafo y el agente) reutilizan esa **sesión compartida**; si el servidor se cae, se reabre automáticamente y la herramienta que falló se repite. Para buscar en las recetas guardadas, el servidor MCP llama a la propia API del backend, que ya tiene cargado el modelo de embeddings.
@@ -101,20 +102,20 @@ flowchart TB
     API[main.py · API FastAPI] --> GRAFO[agents/graph.py · grafo LangGraph]
     API --> RAGI[rag/indexer.py · extractores.py · almacen.py]
     GRAFO --> INT[agents/intencion.py · reglas de intención]
-    GRAFO --> AG[agents/agente.py · agente con herramientas]
+    GRAFO --> AG[agents/agente_chat_generico.py · agente con herramientas]
     GRAFO --> IDEAS[agents/ideas_node.py]
     GRAFO --> RAGB[agents/rag_node.py · búsqueda híbrida]
     GRAFO --> WEB[agents/web_search_node.py · Gemini]
     GRAFO --> LLM[llms/ · Ollama, vLLM, prompts, Whisper]
-    AG --> MCPC[agents/mcp_cliente.py · sesión compartida] --> MCPS[agents/mcp_tool.py · servidor MCP]
-    MCPS --> BD[datos/bd.py · SQLite]
+    AG --> MCPC[agents/mcp_client.py · sesión compartida] --> MCPS[agents/mcp_tool.py · servidor MCP]
+    MCPS --> BD[data/sqlitebd.py · SQLite]
     GRAFO --> BD
     RAGB --> EMB[rag/embedder.py · bge-m3] & MILVUS[(Milvus)]
     RAGI --> EMB & MILVUS
 ```
 
 - **`config.py`** carga el `.env` y valida las variables; se importa lo primero.
-- **`datos/bd.py`** es la única capa de acceso a SQLite: la usan el servidor MCP (para el agente) y el grafo (para las preferencias y como alternativa si MCP falla).
+- **`data/sqlitebd.py`** es la única capa de acceso a SQLite: la usan el servidor MCP (para el agente) y el grafo (para las preferencias y como alternativa si MCP falla).
 - **`rag/`** concentra todo lo relativo a documentos: extracción, troceado, embeddings, Milvus y almacenamiento de originales.
 
 ---
@@ -127,14 +128,25 @@ flowchart TB
 | API | FastAPI + Uvicorn, respuestas en streaming NDJSON |
 | Orquestación | LangGraph (grafo con rutas condicionales) |
 | Herramientas | Model Context Protocol (FastMCP + `langchain-mcp-adapters`) |
-| LLM local | Ollama (Qwen 2.5 recomendado) y vLLM opcional |
+| LLM local | Ollama con `qwen2.5:3b` (un solo modelo para todos los papeles) y, solo con GPU, vLLM con `Qwen/Qwen2.5-7B-Instruct` |
 | LLM en la nube | Gemini en Vertex AI con Google Search grounding (`google-genai`) |
 | Embeddings | `BAAI/bge-m3` con `sentence-transformers` |
-| Base vectorial | Milvus 2.5+ (HNSW denso + BM25 disperso, búsqueda híbrida) |
+| Base vectorial | Milvus (imagen `v3.0.3`; HNSW denso + BM25 disperso, búsqueda híbrida) |
 | Datos del usuario | SQLite |
 | Documentos | PyMuPDF (tablas, OCR), python-docx, openpyxl |
 | Voz | faster-whisper |
 | Observabilidad | Logs con tiempos por fase, LangSmith opcional |
+
+### Modelos utilizados
+
+| Modelo | Dónde | Para qué |
+|---|---|---|
+| `qwen2.5:3b` | Ollama (contenedor o instalado en el equipo) | **Todos los papeles de lenguaje**: clasificar la intención, validar ingredientes, ideas creativas, redactar recetas y el agente con herramientas. Un solo modelo evita recargas y ahorra memoria |
+| `Qwen/Qwen2.5-7B-Instruct` | vLLM, **solo con GPU NVIDIA** | Solo redactar las recetas; si vLLM no responde, las redacta `qwen2.5:3b` |
+| Gemini (`gemini-3.8-flash`) | Vertex AI | Búsqueda web de recetas (mostradas directamente con `WEB_RECETA_DIRECTA=si`) e ideas creativas con `IDEAS_MOTOR=gemini` |
+| `BAAI/bge-m3` | Backend | Embeddings para la búsqueda semántica |
+| BM25 | Milvus | Búsqueda léxica (no es un modelo neuronal) |
+| Whisper `small` | Backend | Transcripción de voz |
 
 ---
 
@@ -142,6 +154,7 @@ flowchart TB
 
 ```
 .
+├── run.py                        # Arranque: comprobaciones, GPU, Docker Compose y modelos
 ├── .env                          # Configuración única (plantilla en .env.example)
 ├── backend/src/
 │   ├── main.py                   # API FastAPI
@@ -149,15 +162,15 @@ flowchart TB
 │   ├── agents/
 │   │   ├── graph.py              # Grafo LangGraph: nodos, rutas, ejecución y streaming
 │   │   ├── intencion.py          # Reglas rápidas de intención (saludos, peticiones de ideas)
-│   │   ├── agente.py             # Agente del chat libre (bucle de herramientas)
+│   │   ├── agente_chat_generico.py # Agente del chat libre (bucle de herramientas)
 │   │   ├── mcp_tool.py           # Servidor MCP con las herramientas
-│   │   ├── mcp_cliente.py        # Sesión MCP compartida (supervisada y reabierta si se cae)
+│   │   ├── mcp_client.py         # Sesión MCP compartida (supervisada y reabierta si se cae)
 │   │   ├── ideas_node.py         # Ideas de platos (propias y creativas)
 │   │   ├── rag_node.py           # Búsqueda en Milvus
 │   │   ├── web_search_node.py    # Gemini con Google Search
 │   │   └── coincidencias.py      # Ingredientes en común entre usuario y receta
-│   ├── datos/
-│   │   └── bd.py                 # SQLite: despensa, preferencias, compra, historial
+│   ├── data/
+│   │   └── sqlitebd.py           # SQLite: despensa, preferencias, compra, historial
 │   ├── llms/
 │   │   ├── ollama_client.py      # Clasificación, validación, ideas JSON, recetas, streaming
 │   │   ├── vllm_client.py        # Generación con vLLM
@@ -167,6 +180,7 @@ flowchart TB
 │       ├── embedder.py           # bge-m3 (instancia única, fp16 con GPU)
 │       ├── extractores.py        # PDF, Word, Excel, CSV, TXT, MD
 │       ├── indexer.py            # Colección, troceado, indexación, listado, borrado
+│       ├── metadatos.py          # Metadatos de las recetas y filtros de Milvus
 │       ├── almacen.py            # Originales en data/documentos
 │       └── cronometro.py         # Tiempos por fase
 ├── frontend/
@@ -194,7 +208,7 @@ flowchart TB
 ### 5.1. Requisitos
 
 - Docker y Docker Compose v2.
-- 16 GB de RAM recomendados (Milvus, bge-m3, Whisper y los modelos de Ollama a la vez).
+- 16 GB de RAM recomendados (Milvus, bge-m3, Whisper y `qwen2.5:3b` a la vez). Con 16 GB o menos, conviene Ollama instalado en el equipo (sección 5.5).
 - Opcional: GPU NVIDIA con `nvidia-container-toolkit` (vLLM y aceleración de Ollama y embeddings).
 - Opcional: proyecto de Google Cloud con Vertex AI habilitado y una cuenta de servicio con el rol *Vertex AI User* (búsqueda web e ideas con Gemini).
 
@@ -229,35 +243,148 @@ RUN apt-get update && apt-get install -y espeak-ng && rm -rf /var/lib/apt/lists/
 
 - **Configuración única:** el compose no interpola variables. Backend, frontend, Ollama y vLLM leen `../.env` con `env_file`; etcd, MinIO y Milvus no lo reciben.
 - **Orden de arranque:** Milvus espera a que etcd y MinIO estén *healthy*, y el backend espera a que Milvus lo esté.
-- **Perfiles:** vLLM solo arranca con `--profile vllm-activo`.
+- **Perfiles:** vLLM solo arranca con `--profile vllm-activo`, el contenedor de Ollama solo con `--profile ollama-docker` y Attu solo con `--profile attu`. `run.py` activa cada perfil cuando corresponde.
+- **Ollama del equipo:** el backend llega a un Ollama instalado en Windows mediante `host.docker.internal` (declarado en `extra_hosts`). Su dependencia de `ollama-server` es opcional (`required: false`), así que arranca aunque ese contenedor no exista.
 - **Volúmenes:** `docker/volumes/{etcd,minio,milvus}` (Milvus), `backend/src/` (código del backend), `metricas/` (scripts de métricas y dibujo del grafo, en `/app/metricas`), `data/` (SQLite, originales, evaluaciones), `config/` (credenciales), `~/.cache/huggingface` (modelos) y el volumen `ollama_data`.
 - **vLLM:** su comando se ejecuta con un shell dentro del contenedor, que expande `VLLM_MODELO` desde el `.env`.
 
 ### 5.4. Puesta en marcha
 
-1. **Configuración.** Copia `.env.example` como `.env` en la raíz y rellena al menos `GCP_PROJECT_ID`. Coloca la clave de la cuenta de servicio en `config/gcp-key.json`.
+**Antes de la primera vez:**
 
-2. **Arranque.** Desde `docker/`:
-   ```bash
-   docker compose up -d --build
-   # Con GPU NVIDIA y vLLM:
-   docker compose --profile vllm-activo up -d --build
-   ```
-
-3. **Modelos de Ollama.** El modelo del agente **debe soportar herramientas** (Qwen 2.5 o Llama 3.1 sí; Llama 3 no):
-   ```bash
-   docker exec ollama-server ollama pull qwen2.5:3b      # generador y agente
-   docker exec ollama-server ollama pull qwen2.5:1.5b    # evaluador (clasificación y validación)
-   ```
-
-4. **Modelo de embeddings.** El backend carga `BAAI/bge-m3` sin conexión desde `~/.cache/huggingface` del host. Descárgalo una vez:
+1. **Configuración.** Copia `.env.example` como `.env` en la raíz y rellena los valores marcados con ⚠️ (al menos `GCP_PROJECT_ID`). Coloca la clave de la cuenta de servicio en `config/gcp-key.json`.
+2. **Modelo de embeddings.** El backend carga `BAAI/bge-m3` sin conexión desde `~/.cache/huggingface` del host. Descárgalo una vez:
    ```bash
    pip install -U huggingface_hub
    huggingface-cli download BAAI/bge-m3
    ```
-   Whisper (`base`) se descarga solo la primera vez que se transcribe.
+   Whisper se descarga solo la primera vez que se transcribe.
 
-5. **Abrir la aplicación** en `http://localhost:8501`. Documentación interactiva de la API: `http://localhost:8080/docs`.
+**Arranque recomendado: `run.py`.** Desde la raíz del proyecto:
+
+```powershell
+python run.py
+```
+
+El script solo usa la biblioteca estándar de Python, así que no hace falta instalar nada más en el equipo. Hace por orden:
+
+1. Comprueba que Docker está en marcha y que existe `docker/docker-compose.yml`.
+2. Si falta el `.env`, lo crea a partir de `.env.example` y avisa. Avisa también si falta `config/gcp-key.json` (sin él, la app funciona pero sin búsqueda web) o el modelo bge-m3 en la caché.
+3. Detecta si hay GPU para vLLM: GPU NVIDIA con *compute capability* 7.0 o superior, al menos 12 GB de VRAM y acceso de Docker a la GPU. Si todo se cumple, añade el perfil `vllm-activo`; si no, usa solo Ollama.
+4. Mira `OLLAMA_URL` en el `.env`: si apunta al Ollama del equipo, comprueba que responde y no levanta el contenedor `ollama-server`; si no, activa el perfil `ollama-docker`. Después levanta los contenedores con `docker compose up -d --build` (o el antiguo `docker-compose` si es el que hay).
+5. Descarga los modelos del `.env` (`OLLAMA_MODELO_EVALUADOR`, `OLLAMA_MODELO_GENERADOR`, `AGENTE_MODELO`) que todavía no estén, en el contenedor o en el Ollama del equipo según `OLLAMA_URL` (sección 5.5).
+6. Espera a que el backend responda y muestra las direcciones de la app.
+
+| Opción | Efecto |
+|---|---|
+| `python run.py --sin-build` | No reconstruye las imágenes: arranque más rápido si no has cambiado el `Dockerfile` ni `requirements.txt` |
+| `python run.py --sin-vllm` | Usa Ollama aunque haya una GPU compatible |
+| `python run.py --sin-modelos` | No descarga modelos de Ollama |
+| `python run.py --attu` | Levanta también Attu, la interfaz web de Milvus, en `http://localhost:3001` |
+| `python run.py --parar` | Para todos los contenedores (los datos se conservan) |
+
+**Arranque manual (equivalente).** Desde `docker/`:
+```bash
+# Con Ollama en Docker
+docker compose --profile ollama-docker up -d --build
+docker exec ollama-server ollama pull qwen2.5:3b
+# Con Ollama instalado en el equipo (debe estar abierto)
+docker compose up -d --build
+ollama pull qwen2.5:3b
+# Con GPU NVIDIA y vLLM, añade:  --profile vllm-activo
+```
+La app usa `qwen2.5:3b` para todo. Si lo cambias por otro, debe admitir herramientas (*tool calling*), que el agente necesita.
+
+**Abrir la aplicación** en `http://localhost:8501`. Documentación interactiva de la API: `http://localhost:8080/docs`. Consola de MinIO: `http://localhost:9001`.
+
+### 5.5. Ollama: en un contenedor o instalado en el equipo
+
+Ollama puede ejecutarse de dos formas. Se elige con **una sola línea del `.env`**, `OLLAMA_URL`, y `run.py` se adapta.
+
+| | **A. Contenedor `ollama-server`** | **B. Instalado en el equipo (nativo)** |
+|---|---|---|
+| `OLLAMA_URL` | `http://ollama-server:11434` | `http://host.docker.internal:11434` |
+| Instalación | Ninguna: lo trae Docker | Instalar Ollama en Windows |
+| Rendimiento | Limitado por la memoria y la CPU asignadas a Docker/WSL | Usa toda la RAM y la CPU del equipo |
+| Recomendado para | Equipos con RAM de sobra, o Linux | Equipos con poca RAM (16 GB o menos). En un i7-10510U genera unas 3 veces más rápido |
+| Modelos guardados en | Volumen Docker `ollama_data` | `%UserProfile%\.ollama\models` |
+
+**Qué hace la app y qué tienes que hacer tú en cada caso:**
+
+| Tarea | A. Contenedor | B. Nativo |
+|---|---|---|
+| Instalar Ollama | Automático (imagen de Docker) | **Manual** (paso 1) |
+| Arrancar Ollama | Automático (`run.py` activa el perfil `ollama-docker`) | **Manual**: debe estar abierto antes de `run.py`, que lo comprueba y avisa si no responde |
+| Configurar Ollama (`OLLAMA_KEEP_ALIVE`, `OLLAMA_NUM_PARALLEL`, `OLLAMA_MAX_LOADED_MODELS`) | Automático: el contenedor lee esas variables del `.env` | **Manual**: el Ollama nativo **no lee el `.env`**; se configuran como variables de entorno de Windows (paso 2) |
+| Permitir conexiones desde los contenedores | No hace falta | **Manual**: `OLLAMA_HOST=0.0.0.0:11434` (paso 2) |
+| Descargar los modelos del `.env` | Automático (`run.py`) | Automático (`run.py`, a través de la API de Ollama). Con `--sin-modelos`, manual: `ollama pull qwen2.5:3b` |
+| Parar Ollama | `python run.py --parar` | `run.py --parar` **no** lo para: clic derecho en su icono, junto al reloj → *Quit Ollama* |
+
+#### Opción A: Ollama en un contenedor
+
+1. En el `.env`: `OLLAMA_URL=http://ollama-server:11434`, junto con las variables `OLLAMA_*` del servidor.
+2. `python run.py`
+
+Nada más: `run.py` levanta el contenedor y descarga los modelos.
+
+#### Opción B: Ollama instalado en el equipo
+
+**1. Instala Ollama** desde `ollama.com`, o con:
+```powershell
+winget install --id Ollama.Ollama -e
+```
+
+**2. Configúralo con variables de entorno de usuario.** La app no lo hace por ti, porque el Ollama nativo no lee el `.env`:
+```powershell
+[Environment]::SetEnvironmentVariable("OLLAMA_HOST", "0.0.0.0:11434", "User")
+[Environment]::SetEnvironmentVariable("OLLAMA_KEEP_ALIVE", "-1", "User")
+[Environment]::SetEnvironmentVariable("OLLAMA_NUM_PARALLEL", "1", "User")
+[Environment]::SetEnvironmentVariable("OLLAMA_MAX_LOADED_MODELS", "1", "User")
+```
+Después, **reinicia Ollama** (icono junto al reloj → *Quit Ollama*, y ábrelo de nuevo desde el menú Inicio) para que las lea.
+
+| Variable | Para qué |
+|---|---|
+| `OLLAMA_HOST=0.0.0.0:11434` | **Imprescindible**: sin ella, Ollama solo acepta conexiones del propio Windows y los contenedores no llegan. Si el Firewall de Windows pregunta, permite el acceso solo en redes privadas |
+| `OLLAMA_KEEP_ALIVE=-1` | El modelo no se descarga de memoria entre peticiones |
+| `OLLAMA_NUM_PARALLEL=1` | Una petición a la vez: menos memoria reservada |
+| `OLLAMA_MAX_LOADED_MODELS=1` | Un solo modelo cargado (la app usa el mismo para todo) |
+
+**3. Apunta la app al Ollama del equipo.** En el `.env`:
+```
+OLLAMA_URL=http://host.docker.internal:11434
+```
+
+**4. Modelos.** `run.py` descarga los que falten. Para hacerlo a mano, o si usas `--sin-modelos`:
+```powershell
+ollama pull qwen2.5:3b
+ollama list
+```
+El Ollama nativo guarda sus propios modelos: los que tuviera el contenedor no le sirven.
+
+**5. Si antes usabas el contenedor, elimínalo.** Tiene `restart: unless-stopped`, así que Docker lo arrancaría al abrirse y chocaría con el Ollama nativo por el puerto 11434. Los modelos del contenedor se conservan en el volumen `ollama_data`, por si vuelves a la opción A.
+```powershell
+docker rm -f ollama-server
+```
+
+**6. Reduce la memoria de Docker** (opcional, recomendado). Sin el modelo dentro, Docker necesita bastante menos, y el resto queda para Windows y Ollama. En `%UserProfile%\.wslconfig`:
+```ini
+[wsl2]
+memory=6GB
+processors=8
+```
+Aplícalo con `wsl --shutdown` y vuelve a abrir Docker Desktop.
+
+**7. Arranca con Ollama abierto:** `python run.py`.
+
+**8. Comprueba la conexión:**
+```powershell
+Invoke-RestMethod http://127.0.0.1:11434
+docker exec cookingaura-app-backend python -c "import urllib.request; print(urllib.request.urlopen('http://host.docker.internal:11434').read().decode())"
+```
+Los dos deben responder `Ollama is running`. Si el primero responde y el segundo no, falta `OLLAMA_HOST=0.0.0.0:11434` o reiniciar Ollama.
+
+**Volver a la opción A:** cierra el Ollama nativo, pon `OLLAMA_URL=http://ollama-server:11434` en el `.env` y lanza `python run.py`.
 
 ---
 
@@ -267,18 +394,19 @@ RUN apt-get update && apt-get install -y espeak-ng && rm -rf /var/lib/apt/lists/
 |---|---|---|
 | `PYTHONUNBUFFERED` | `1` | Muestra los `print` en `docker logs` al momento |
 | `MILVUS_HOST` | `standalone` | Host de Milvus |
-| `OLLAMA_URL` | `http://ollama-server:11434` | URL de Ollama |
+| `OLLAMA_URL` | `http://ollama-server:11434` | Dónde está Ollama: `http://ollama-server:11434` (contenedor) o `http://host.docker.internal:11434` (instalado en el equipo). Ver sección 5.5 |
 | `VLLM_URL` | `http://vllm-server:8000/v1` | URL de vLLM |
 | `BACKEND_URL` | `http://cookingaura-app-backend:8080` | URL del backend para el frontend |
 | `BACKEND_INTERNO_URL` | `http://localhost:8080` | URL del backend para el servidor MCP (mismo contenedor) |
-| `OLLAMA_MODELO_EVALUADOR` | `llama3` | Clasificación de intención y validación de ingredientes |
-| `OLLAMA_MODELO_GENERADOR` | `llama3` | Ideas creativas y recetas |
-| `OLLAMA_KEEP_ALIVE` | `-1` | Ollama mantiene los modelos cargados |
-| `OLLAMA_MAX_LOADED_MODELS` | `2` | Modelos cargados a la vez |
-| `AGENTE_MODELO` | `OLLAMA_MODELO_GENERADOR` | Modelo del agente (**con soporte de herramientas**) |
+| `OLLAMA_MODELO_EVALUADOR` | `qwen2.5:3b` | Clasificación de intención y validación de ingredientes. Si falta en el `.env`, el código usa `llama3` |
+| `OLLAMA_MODELO_GENERADOR` | `qwen2.5:3b` | Ideas creativas y recetas (mismo modelo que el evaluador) |
+| `OLLAMA_KEEP_ALIVE` | `-1` | Ollama mantiene los modelos cargados. **Solo para el contenedor**: con Ollama nativo se define como variable de entorno de Windows |
+| `OLLAMA_MAX_LOADED_MODELS` | `1` | Modelos cargados a la vez. Solo para el contenedor, como el anterior |
+| `OLLAMA_NUM_PARALLEL` | `1` | Peticiones simultáneas por modelo. Solo para el contenedor, como el anterior |
+| `AGENTE_MODELO` | `qwen2.5:3b` | Modelo del agente; debe admitir herramientas. Si falta, usa el del generador |
 | `AGENTE_MAX_PASOS` | `5` | Rondas de herramientas por mensaje |
 | `AGENTE_HISTORIAL` | `8` | Mensajes anteriores que recibe el agente |
-| `VLLM_MODELO` | `Qwen/Qwen2.5-7B-Instruct` | Modelo que sirve vLLM y que pide el backend |
+| `VLLM_MODELO` | `Qwen/Qwen2.5-7B-Instruct` | Modelo que sirve vLLM (solo con GPU) para redactar las recetas |
 | `VLLM_GPU_UTIL` | `0.6` | Fracción de VRAM para vLLM |
 | `VLLM_MAX_MODEL_LEN` | `8192` | Contexto máximo de vLLM |
 | `IDEAS_TOTAL` | `5` | Ideas por respuesta |
@@ -395,7 +523,7 @@ La procedencia de las ideas la decide `fuente_busqueda`:
 ### 7.7. Voz
 
 - **Captura:** micrófono integrado en `st.chat_input(accept_audio=True)`, grabando a 16 kHz. En versiones de Streamlit sin esa opción, el frontend muestra un botón con grabador aparte.
-- **Transcripción:** `POST /transcribir` con faster-whisper (`base`, CPU, int8), en un hilo aparte para no bloquear otras peticiones. Los WAV se decodifican sin PyAV; otros formatos sí pasan por PyAV.
+- **Transcripción:** `POST /transcribir` con faster-whisper (modelo `WHISPER_MODELO`, `small` por defecto, en CPU con int8), en un hilo aparte para no bloquear otras peticiones. Recibe como contexto un vocabulario de cocina y los ingredientes de la despensa, filtra los silencios y normaliza el volumen. Los WAV se decodifican sin PyAV; otros formatos sí pasan por PyAV.
 - **Envío:** el texto transcrito se manda al chat como un mensaje normal, marcado con 🎙️.
 
 ### 7.8. Streaming
@@ -460,8 +588,33 @@ Ejemplos: «¿me quedan huevos?», «he comprado 2 kg de patatas», «he hecho l
 | `fuente` | VARCHAR (512) | Nombre del documento de origen |
 | `vector_denso` | FLOAT_VECTOR (1024) | Embedding de bge-m3. Índice HNSW, métrica coseno |
 | `vector_disperso` | SPARSE_FLOAT_VECTOR | Generado por Milvus con BM25 a partir de `texto` |
+| `nombre` | VARCHAR | Nombre del plato |
+| `tipo_comida` | ARRAY de VARCHAR | Desayuno, brunch, almuerzo, comida, merienda, cena, postre (una receta puede tener varios) |
+| `categoria` | VARCHAR | Legumbres, pescados, postres… |
+| `raciones`, `tiempo_min` | INT32 | Raciones y minutos (0 = no se sabe) |
+| `dificultad` | VARCHAR | `facil`, `media` o `dificil` |
+| `dieta` | ARRAY de VARCHAR | `vegana`, `vegetariana`, `pescetariana`, `sin gluten`, `sin lactosa`, `omnivora` |
+| `alergenos` | ARRAY de VARCHAR | Los 14 alérgenos oficiales: `gluten`, `crustaceos`, `huevo`, `pescado`, `cacahuete`, `soja`, `lacteos`, `frutos de cascara`, `apio`, `mostaza`, `sesamo`, `sulfitos`, `altramuces`, `moluscos` |
+| `ingredientes` | ARRAY de VARCHAR | Nombres normalizados, sin tildes, en singular y sin medidas («2 dientes de ajo» → `ajo`) |
+| `origen_meta` | VARCHAR | De dónde salen los metadatos: `tabla`, `texto` o `ninguno` |
 
-La colección se crea al subir el primer documento.
+La colección se crea al subir el primer documento. Los campos de metadatos tienen índices (`INVERTED` y `STL_SORT`) cuando la versión de Milvus los admite; si no, los filtros funcionan igual, sin índice.
+
+**Origen de los metadatos** (`src/rag/metadatos.py`):
+
+| Documento | Cómo se obtienen | Fiabilidad |
+|---|---|---|
+| Recetario en tabla (Excel, CSV) | De sus columnas, reconociendo los nombres habituales: *Tipo de comida*, *Categoría*, *Raciones*, *Tiempo* (también «1 h 30 min»), *Dificultad*, *Dieta*, *Alérgenos*, *Ingredientes* | Alta (`tabla`) |
+| Texto con líneas «Etiqueta: valor» («Tipo de comida: Cena», «Tiempo: 30 min») | De esas líneas | Media (`texto`) |
+| Texto libre sin etiquetas | Sin metadatos | `ninguno` |
+
+Las alergias del usuario se traducen a los alérgenos oficiales para filtrar: «marisco» → `crustaceos` y `moluscos`; «lactosa» → `lacteos`; «nueces» → `frutos de cascara`.
+
+**Cambio de esquema.** Una colección creada antes de los metadatos sigue funcionando: el tipo de comida se filtra por las líneas «Tipo de comida» del texto y el resto de criterios se ignora. Para filtrar en Milvus con todos los criterios, recréala y reindexa los originales:
+
+```powershell
+docker exec cookingaura-app-backend python -m src.rag.indexer --recrear --reindexar
+```
 
 ### 9.2. Indexación
 
@@ -479,8 +632,9 @@ La colección se crea al subir el primer documento.
    ```
 2. **Troceado** en fragmentos de unos 1.500 caracteres sin partir líneas. Una sección nueva empieza fragmento si el actual va por la mitad, y una sección partida repite su título («## DÍA 1 (continuación)»). Cada receta de un recetario tabular es un fragmento propio.
 3. **Embeddings** en lote con bge-m3.
-4. **Inserción.** Un documento con el mismo nombre se **sustituye** (se borran antes sus fragmentos).
-5. **Original** guardado en `data/documentos/`, con fecha y tamaño en SQLite.
+4. **Metadatos** de cada fragmento: los de su fila si es un recetario en tabla, o los de sus líneas «Etiqueta: valor». El log indica cuántos fragmentos tienen metadatos de tabla, de texto o ninguno.
+5. **Inserción.** Un documento con el mismo nombre se **sustituye** (se borran antes sus fragmentos).
+6. **Original** guardado en `data/documentos/`, con fecha y tamaño en SQLite.
 
 ### 9.3. Búsqueda
 
@@ -498,6 +652,21 @@ Cada operación deja sus tiempos en el log:
 ⏱ [RAG indexación] lectura 3 ms · extracción 420 ms · troceado 1 ms · ... · embeddings 3800 ms · inserción milvus 90 ms · total 4330 ms
 ```
 
+
+**Filtros por metadatos** (`buscar_con_criterios` en `rag_node.py`). Se aplican a la búsqueda semántica y a la BM25, y funcionan en dos pasos:
+
+1. Las recetas que **cumplen** todos los criterios.
+2. Si faltan resultados, las que **no tienen el dato** (documentos sin metadatos), marcadas con `"cumple": false`. Las que **incumplen** un criterio no salen nunca: pedir un desayuno no devuelve una comida.
+
+| Criterio | Filtro | Cómo se usa |
+|---|---|---|
+| Tipo de comida | `tipo_comida` contiene alguno de los compatibles (desayuno ↔ brunch, comida ↔ almuerzo, merienda ↔ postre) | Siempre que se pide un tipo de comida |
+| Alergias | `alergenos` no contiene ninguno de los del usuario | Siempre, con las alergias guardadas. Además se revisa el texto, para los documentos sin metadatos |
+| Dieta | `dieta` es compatible (una receta vegana vale para un vegetariano) | Con la dieta guardada en las preferencias |
+| Tiempo máximo | `tiempo_min` ≤ X | API (`tiempo_max`) |
+| Documento | `fuente` == X | API (`fuente`) |
+
+Las ideas de tus recetas usan el tipo de comida, las alergias y la dieta. En la API: `GET /recetas/buscar?query=…&tipo_comida=cena&dieta=vegetariana&tiempo_max=30&fuente=Recetario_CookingAura.xlsx`.
 ---
 
 ## 10. Datos y persistencia
@@ -513,7 +682,7 @@ Cada operación deja sus tiempos en el log:
 | Fragmentos, vectores e índices | MinIO · `docker/volumes/minio/` |
 | Esquema y metadatos de Milvus | etcd · `docker/volumes/etcd/` |
 | Datos de trabajo de Milvus | `docker/volumes/milvus/` |
-| Modelos de Ollama | volumen `ollama_data` |
+| Modelos de Ollama | Volumen `ollama_data` (contenedor) o `%UserProfile%\.ollama\models` (Ollama nativo) |
 | Modelos de HuggingFace | `~/.cache/huggingface` del host |
 
 Las tablas de SQLite se crean solas al primer uso. Las tres carpetas de `docker/volumes/` deben tratarse como una unidad.
@@ -557,7 +726,7 @@ Las tablas de SQLite se crean solas al primer uso. Las tres carpetas de `docker/
 | `PUT` | `/actualizar_ingrediente` | Actualiza cantidad y unidad (por `id` si se indica) |
 | `DELETE` | `/ingrediente?nombre=&id=` | Elimina un ingrediente (por `id` si se indica) |
 | `GET` | `/estado_milvus` | Si hay documentos indexados |
-| `GET` | `/recetas/buscar` | `query`, `modo`, `top_k`, `ranker`, `peso_denso` |
+| `GET` | `/recetas/buscar` | `query`, `modo`, `top_k`, `ranker`, `peso_denso` y filtros opcionales: `tipo_comida`, `dieta`, `tiempo_max`, `fuente` |
 | `POST` | `/recetas/upload` | Sube, indexa y guarda un documento |
 | `GET` | `/recetas/documentos` | Documentos indexados |
 | `DELETE` | `/recetas/documentos?nombre=` | Borra un documento (fragmentos y original) |
@@ -597,6 +766,7 @@ Todos los comandos se ejecutan en el contenedor del backend: `docker exec cookin
 | Comando | Para qué |
 |---|---|
 | `python -m metricas.dibujarGrafo` | Dibuja el grafo en `data/grafo/` (HTML, Mermaid, PNG) y lista nodos y aristas |
+| `python run.py --attu` (en el equipo) | Abre Attu en `http://localhost:3001` para explorar la colección `recetas`: esquema, índices, fragmentos y búsquedas |
 | `python src/agents/mcp_tool.py` | Lanza el servidor MCP a mano: si arranca, se queda esperando; si no, muestra el error |
 | `python -m src.rag.indexer --recrear` | Colección nueva y vacía (borra los datos) |
 | `python -m src.rag.indexer --recrear --reindexar` | Colección nueva con todos los originales guardados |
@@ -617,7 +787,7 @@ Todos los comandos se ejecutan en el contenedor del backend: `docker exec cookin
 Al final indica la mejor configuración para el `.env`.
 
 ### Texto frente a voz (`preparar-voz` y `flujos`)
-`preparar-voz` crea `data/eval/voz/casos.json` con 6 casos de solo lectura (ideas, asistente y saludo) y sintetiza sus audios con `espeak-ng` si está instalado. Para medir con voz real, sustituye los WAV por grabaciones propias con el mismo nombre.
+Los casos están en `data/eval/voz/casos.json` (29 de solo lectura: ideas, asistente y respuesta directa; si no existe, `preparar-voz` crea 6 básicos). `preparar-voz` sintetiza sus audios con `espeak-ng`; para medir con voz real, sustituye los WAV por grabaciones propias con el mismo nombre. **Guía paso a paso en [README_METRICAS.md](README_METRICAS.md#pruebas-de-voz-paso-a-paso).**
 
 `flujos` envía cada caso como texto a `/chat/stream` y como audio a `/transcribir` seguido de `/chat/stream`, y compara:
 
@@ -633,22 +803,43 @@ El detalle queda en `data/eval/flujos_<fecha>.csv`.
 
 ## 14. Rendimiento
 
-Sin GPU, todo el trabajo de los LLM recae en la CPU. Valores orientativos en un sobremesa:
+La app usa `qwen2.5:3b` en Ollama para todos los papeles de lenguaje. Sin GPU, todo el trabajo recae en la CPU, y el factor que más pesa es **dónde corre Ollama y cuánta memoria libre tiene**.
 
-| Configuración | Ideas creativas | Receta | Paso del agente |
-|---|---|---|---|
-| llama3 8B en CPU | 1–2 min | 2–3 min | — (sin herramientas) |
-| qwen2.5:3b en CPU | 15–25 s | 40–60 s | 5–15 s |
-| `IDEAS_MOTOR=gemini` | 2–3 s | — | — |
+### Medidas en el equipo de desarrollo
 
-Recomendaciones para equipos sin GPU:
+Portátil con Intel i7-10510U (4 núcleos, 8 hilos, 15 W), sin GPU, medido con `python -m metricas.evaluar latencia`:
 
-- `qwen2.5:3b` para generar y para el agente, y `qwen2.5:1.5b` para clasificar.
-- `IDEAS_MOTOR=gemini` si Vertex AI está configurado.
-- Revisar la CPU y la RAM asignadas a Docker Desktop en Windows y Mac.
-- Tener en cuenta que la primera petición tarda más: carga bge-m3, Whisper y los modelos de Ollama.
+**Velocidad de `qwen2.5:3b`:**
 
-Los tiempos se ven en el chat, en los logs (`⏱`) y con los comandos de evaluación.
+| Ollama | Lectura del prompt | Generación |
+|---|---|---|
+| En Docker, con la memoria del sistema al límite | 9 tok/s | 1,6 tok/s |
+| Instalado en el equipo, con memoria libre | **101 tok/s** | **5,5 tok/s** |
+
+**Tiempos de extremo a extremo (mediana):**
+
+| Fase | Ollama en Docker | Ollama en el equipo |
+|---|---|---|
+| Ideas | 214 s | **75 s** |
+| Receta de una idea propia (primera palabra / total) | 97–200 s / 285 s | **4–5 s / 92 s** |
+| Receta de una idea creativa, reescrita por el modelo local | 555 s | 157 s |
+| Receta de una idea creativa, mostrada tal cual (`WEB_RECETA_DIRECTA=si`) | — | Lo que tarde Gemini: 19–60 s, con un máximo de `GEMINI_TIMEOUT` (25 s). *Pendiente de medir* |
+
+Dónde se va el tiempo con Ollama en el equipo: unos 72 s de las ideas son el LLM escribiendo el JSON de 5 ideas; en las recetas, la primera palabra aparece en segundos y el resto se escribe en directo a unos 5 tok/s. La búsqueda en Milvus, la despensa y el agente MCP suman pocos segundos.
+
+### Con GPU (vLLM)
+
+Con una GPU NVIDIA, vLLM redacta las recetas con `Qwen/Qwen2.5-7B-Instruct`; el resto de papeles sigue en `qwen2.5:3b`. **No se ha medido** en el equipo de desarrollo. Ten en cuenta la memoria de vídeo: el modelo sin cuantizar ocupa unos 15 GB solo en pesos, así que necesita una GPU de 24 GB con `VLLM_GPU_UTIL` de 0,75 o más. Para GPUs de 12–16 GB, usa una versión cuantizada (por ejemplo, `Qwen/Qwen2.5-7B-Instruct-AWQ`).
+
+### Recomendaciones para equipos sin GPU
+
+1. **Ollama instalado en el equipo** si tienes 16 GB de RAM o menos (sección 5.5): en el equipo de desarrollo, unas 3 veces más rápido.
+2. **`WEB_RECETA_DIRECTA=si`** y **`GEMINI_TIMEOUT=25`**: las recetas de ideas creativas no se reescriben en local, y Gemini no puede bloquear la respuesta.
+3. **`IDEAS_MOTOR=gemini`**, si Vertex AI está configurado: las ideas pasan de ~75 s a pocos segundos.
+4. **`IDEAS_TOTAL=4`**: menos ideas, menos texto que generar (un 20–25 % menos de tiempo en las ideas).
+5. Como último recurso, `qwen2.5:1.5b` en lugar de `qwen2.5:3b`: aproximadamente el doble de rápido, con ideas y recetas de menor calidad.
+
+La primera petición tras arrancar tarda algo más, aunque el backend precarga bge-m3 y los modelos de Ollama en segundo plano. Los tiempos de cada paso se ven en el chat, en los logs (`⏱`) y con los comandos de evaluación.
 
 ---
 
@@ -658,8 +849,8 @@ Los tiempos se ven en el chat, en los logs (`⏱`) y con los comandos de evaluac
 |---|---|
 | `panic: failed to create etcd client: context deadline exceeded` | Milvus arrancó antes que etcd. El compose espera a `service_healthy`; revisa `docker logs milvus-etcd` |
 | No se ven los `print` en los logs | Falta `PYTHONUNBUFFERED=1` |
-| `McpError: Connection closed` o «MCP: … no ha arrancado» al iniciar | El servidor MCP se cerró al arrancar (normalmente falta `src/datos/` u otro fichero). Lánzalo a mano: `python src/agents/mcp_tool.py`. Mientras tanto se reintenta cada 30 s, cada petición abre su propia sesión y el flujo de ideas funciona sin MCP |
-| El agente da error «does not support tools» | El modelo del agente no admite herramientas: usa `AGENTE_MODELO=qwen2.5:3b` (o `llama3.1`) |
+| `McpError: Connection closed` o «MCP: … no ha arrancado» al iniciar | El servidor MCP se cerró al arrancar (normalmente falta `src/data/` u otro fichero). Lánzalo a mano: `python src/agents/mcp_tool.py`. Mientras tanto se reintenta cada 30 s, cada petición abre su propia sesión y el flujo de ideas funciona sin MCP |
+| El agente da error «does not support tools» | El modelo del agente no admite herramientas: revisa que el `.env` tenga `AGENTE_MODELO=qwen2.5:3b` (si falta, el código usa `llama3`, que no las admite) |
 | `open() got an unexpected keyword argument 'metadata_errors'` | faster-whisper antiguo con PyAV 14+. Usa `faster-whisper>=1.1.1` (los WAV ya no dependen de PyAV) |
 | `Your default credentials were not found` | Faltan `GOOGLE_APPLICATION_CREDENTIALS` o `GCP_PROJECT_ID`, o la clave no está en `config/gcp-key.json` |
 | Errores `403` de LangSmith | Clave no válida o región distinta: `LANGCHAIN_TRACING_V2=false` o configura `LANGSMITH_ENDPOINT` |
@@ -667,7 +858,11 @@ Los tiempos se ven en el chat, en los logs (`⏱`) y con los comandos de evaluac
 | `ImportError: ... streamable_http_client` | `mcp` y `langchain-mcp-adapters` incompatibles: actualiza ambos a la vez |
 | Un mensaje de cocina recibe «solo puedo ayudarte con recetas» | Revisa en el log `Clasificador (...) respondió:`. Las reglas y la red de seguridad lo evitan en los casos habituales |
 | No aparece el micro en la barra del chat | Streamlit sin `accept_audio`: actualízalo (se muestra un botón de voz aparte mientras tanto) |
-| Ollama muy lento | Modelo en CPU o sin caber en la VRAM: `docker exec ollama-server ollama ps` y usa un modelo más pequeño |
+| Ollama muy lento | Mira `ollama ps` y la memoria de Windows durante una generación. Si la memoria pasa del 90 %, usa Ollama nativo (sección 5.5), reduce la memoria de Docker o usa un modelo más pequeño |
+| `ports are not available: ... 11434` al arrancar | Hay dos Ollama queriendo el mismo puerto (el nativo y el contenedor). Con Ollama nativo, `OLLAMA_URL` debe apuntar a `host.docker.internal` y el contenedor debe eliminarse: `docker rm -f ollama-server` |
+| El backend no llega al Ollama del equipo | Falta `OLLAMA_HOST=0.0.0.0:11434` en las variables de Windows o reiniciar Ollama tras definirla; revisa también el firewall (sección 5.5, paso 8) |
+| Error «tiene un esquema antiguo (faltan: nombre, tipo_comida…)» al subir un documento | La colección es anterior a los metadatos: `python -m src.rag.indexer --recrear --reindexar` |
+| Pido un desayuno y salen recetas de otro tipo | Mira en el log la línea «Filtro de metadatos». Si dice «sin metadatos en la colección», recréala; si las recetas salen como «sin ese dato», el documento no indica el tipo de comida (usa un recetario en tabla con esa columna) |
 | «📚 Más de mis recetas» desactivado | No hay documentos indexados: súbelos o reindexa |
 | Un documento se indexa mal | Revisa el texto buscando en la pestaña Recetas. Casos difíciles: tablas sin bordes, más de dos columnas, texto en imágenes |
 

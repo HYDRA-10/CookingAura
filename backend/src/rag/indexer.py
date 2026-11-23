@@ -8,6 +8,7 @@ from pymilvus import MilvusClient, DataType, Function, FunctionType
 
 from src.rag.embedder import embedder
 from src.rag.cronometro import Cronometro
+from src.rag import metadatos as meta
 from src.agents.rag_node import get_client, COLLECTION_NAME, CAMPO_DENSO, CAMPO_DISPERSO, _preparar_coleccion
 
 DIMENSION = 1024           # Dimensión densa de BAAI/bge-m3
@@ -16,7 +17,10 @@ MAX_FUENTE = 512
 TAM_TROZO = 1500           # Caracteres por fragmento (holgado frente a MAX_TEXTO aunque haya tildes)
 SOLAPE = 200               # Solape al cortar líneas muy largas
 
-CAMPOS_REQUERIDOS = {"id", "texto", "fuente", CAMPO_DENSO, CAMPO_DISPERSO}
+# Metadatos para filtrar (ver src/rag/metadatos.py)
+CAMPOS_METADATOS = ["nombre", "tipo_comida", "categoria", "raciones", "tiempo_min", "dificultad",
+                    "dieta", "alergenos", "ingredientes", "origen_meta"]
+CAMPOS_REQUERIDOS = {"id", "texto", "fuente", CAMPO_DENSO, CAMPO_DISPERSO, *CAMPOS_METADATOS}
 
 # Analizador en español: minúsculas, sin stopwords, con stemming ("huevos" == "huevo") y sin tildes
 ANALIZADOR_ES = {
@@ -49,6 +53,22 @@ def init_milvus(recrear: bool = False) -> MilvusClient:
     schema.add_field(field_name=CAMPO_DENSO, datatype=DataType.FLOAT_VECTOR, dim=DIMENSION)
     schema.add_field(field_name=CAMPO_DISPERSO, datatype=DataType.SPARSE_FLOAT_VECTOR)
 
+    # Metadatos (vacíos o 0 = "no se sabe"): permiten filtrar antes de ordenar por parecido
+    schema.add_field(field_name="nombre", datatype=DataType.VARCHAR, max_length=meta.MAX_NOMBRE * 4)
+    schema.add_field(field_name="tipo_comida", datatype=DataType.ARRAY, element_type=DataType.VARCHAR,
+                     max_capacity=meta.MAX_TIPOS, max_length=32)
+    schema.add_field(field_name="categoria", datatype=DataType.VARCHAR, max_length=meta.MAX_CATEGORIA * 4)
+    schema.add_field(field_name="raciones", datatype=DataType.INT32)
+    schema.add_field(field_name="tiempo_min", datatype=DataType.INT32)
+    schema.add_field(field_name="dificultad", datatype=DataType.VARCHAR, max_length=16)
+    schema.add_field(field_name="dieta", datatype=DataType.ARRAY, element_type=DataType.VARCHAR,
+                     max_capacity=meta.MAX_DIETAS, max_length=32)
+    schema.add_field(field_name="alergenos", datatype=DataType.ARRAY, element_type=DataType.VARCHAR,
+                     max_capacity=meta.MAX_ALERGENOS, max_length=32)
+    schema.add_field(field_name="ingredientes", datatype=DataType.ARRAY, element_type=DataType.VARCHAR,
+                     max_capacity=meta.MAX_INGREDIENTES, max_length=meta.MAX_ETIQUETA * 4)
+    schema.add_field(field_name="origen_meta", datatype=DataType.VARCHAR, max_length=16)
+
     # Milvus genera el vector disperso BM25 a partir de 'texto' al insertar y al buscar
     schema.add_function(Function(
         name="generador_bm25",
@@ -62,10 +82,30 @@ def init_milvus(recrear: bool = False) -> MilvusClient:
                            params={"M": 16, "efConstruction": 200})
     index_params.add_index(field_name=CAMPO_DISPERSO, metric_type="BM25",
                            index_type="SPARSE_INVERTED_INDEX")
-
     client.create_collection(collection_name=COLLECTION_NAME, schema=schema, index_params=index_params)
+    _indices_metadatos(client)
     print(f"✅ Colección híbrida '{COLLECTION_NAME}' creada.")
     return client
+
+
+def _indices_metadatos(client: MilvusClient) -> None:
+    """Índices de los metadatos, para que los filtros no recorran toda la colección.
+    Son opcionales: si una versión de Milvus no admite alguno (p. ej. sobre listas), el filtro funciona
+    igual, solo que sin índice (con pocos miles de fragmentos no se nota)."""
+    indices = [(c, "INVERTED") for c in ("tipo_comida", "dieta", "alergenos", "ingredientes",
+                                         "categoria", "dificultad", "fuente")]
+    indices += [(c, "STL_SORT") for c in ("raciones", "tiempo_min")]
+    sin_indice = []
+    for campo, tipo in indices:
+        try:
+            params = client.prepare_index_params()
+            params.add_index(field_name=campo, index_type=tipo)
+            client.create_index(collection_name=COLLECTION_NAME, index_params=params)
+        except Exception:
+            sin_indice.append(campo)
+    if sin_indice:
+        print(f"   ℹ️  Sin índice (esta versión de Milvus no lo admite; el filtro funciona igual): "
+              f"{', '.join(sin_indice)}")
 
 
 def asegurar_coleccion() -> MilvusClient:
@@ -76,7 +116,7 @@ def asegurar_coleccion() -> MilvusClient:
     if faltan:
         raise RuntimeError(
             f"La colección '{COLLECTION_NAME}' tiene un esquema antiguo (faltan: {', '.join(sorted(faltan))}). "
-            f"Recréala con: python -m src.rag.indexer --recrear  (borra los documentos indexados)."
+            f"Recréala y reindexa los originales con: python -m src.rag.indexer --recrear --reindexar"
         )
     return client
 
@@ -178,7 +218,8 @@ def listar_documentos() -> list[dict]:
 
 
 def indexar_documento(texto: str, fuente: str, recetas: list[str] | None = None,
-                      reemplazar: bool = True, crono: Cronometro | None = None) -> int:
+                      reemplazar: bool = True, crono: Cronometro | None = None,
+                      metadatos_recetas: list[dict] | None = None) -> int:
     """Trocea, vectoriza (denso) e inserta un documento. El vector BM25 lo genera Milvus.
     'texto' se trocea por líneas; cada elemento de 'recetas' (una fila de un recetario) va por separado.
     Con reemplazar=True, si ya había un documento con el mismo nombre se sustituye (no se duplica)."""
@@ -186,9 +227,16 @@ def indexar_documento(texto: str, fuente: str, recetas: list[str] | None = None,
 
     with crono.fase("troceado"):
         trozos = trocear_texto(texto) if texto and texto.strip() else []
-        for receta in recetas or []:
+        # Texto libre: metadatos de sus líneas "Etiqueta: valor", si las tiene
+        metas = [meta.para_fragmento(t) for t in trozos]
+        metas_recetas = metadatos_recetas or []
+        for i, receta in enumerate(recetas or []):
             if receta.strip():
-                trozos.extend(trocear_receta(receta.strip()))
+                trozos_receta = trocear_receta(receta.strip())
+                trozos.extend(trozos_receta)
+                # Recetario en tabla: todos los trozos de la receta llevan los metadatos de su fila
+                meta_receta = metas_recetas[i] if i < len(metas_recetas) else None
+                metas.extend(meta.para_fragmento(t, meta_receta) for t in trozos_receta)
     if not trozos:
         crono.imprimir(f"'{fuente}' sin contenido")
         return 0
@@ -207,10 +255,14 @@ def indexar_documento(texto: str, fuente: str, recetas: list[str] | None = None,
         vectores = embedder.get_embeddings(trozos)
 
     with crono.fase("inserción milvus"):
-        datos = [{"texto": t, "fuente": fuente[:MAX_FUENTE], CAMPO_DENSO: v} for t, v in zip(trozos, vectores)]
+        datos = [{"texto": t, "fuente": fuente[:MAX_FUENTE], CAMPO_DENSO: v, **m}
+                 for t, v, m in zip(trozos, vectores, metas)]
         client.insert(collection_name=COLLECTION_NAME, data=datos)
 
-    crono.imprimir(f"'{fuente}' · {len(trozos)} fragmentos · {sum(len(t) for t in trozos)} caracteres")
+    con_meta = Counter(m["origen_meta"] for m in metas)
+    crono.imprimir(f"'{fuente}' · {len(trozos)} fragmentos · {sum(len(t) for t in trozos)} caracteres · "
+                   f"metadatos: {con_meta.get('tabla', 0)} de tabla, {con_meta.get('texto', 0)} de texto, "
+                   f"{con_meta.get('ninguno', 0)} sin metadatos")
     return len(trozos)
 
 
@@ -227,7 +279,8 @@ def reindexar_originales() -> None:
     for archivo in archivos:
         try:
             extraccion = extraer_documento(archivo.name, archivo.read_bytes())
-            total += indexar_documento(extraccion.texto, archivo.name, recetas=extraccion.recetas)
+            total += indexar_documento(extraccion.texto, archivo.name, recetas=extraccion.recetas,
+                                       metadatos_recetas=extraccion.metadatos)
         except Exception as e:
             print(f"⚠️  '{archivo.name}' no se pudo reindexar: {e}")
     print(f"✅ {len(archivos)} documentos reindexados ({total} fragmentos)")
